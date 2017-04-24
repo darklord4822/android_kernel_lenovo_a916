@@ -39,7 +39,7 @@
 #include <linux/hwmsensor.h>
 #include <linux/hwmsen_dev.h>
 #include <linux/sensors_io.h>
-#include "bma222E.h"
+#include "bma223.h"
 #include <linux/hwmsen_helper.h>
 /*----------------------------------------------------------------------------*/
 #define I2C_DRIVERID_BMA222 222
@@ -162,18 +162,10 @@ static bool enable_status = false;
 
 
 /*----------------------------------------------------------------------------*/
-//#define GSE_DEBUG
-#ifdef GSE_DEBUG
 #define GSE_TAG                  "[Gsensor] "
 #define GSE_FUN(f)               printk(KERN_INFO GSE_TAG"%s\n", __FUNCTION__)
 #define GSE_ERR(fmt, args...)    printk(KERN_ERR GSE_TAG"%s %d : "fmt, __FUNCTION__, __LINE__, ##args)
 #define GSE_LOG(fmt, args...)    printk(KERN_INFO GSE_TAG fmt, ##args)
-#else
-#define GSE_TAG                  "[Gsensor] "
-#define GSE_FUN(f)               do{}while(0)
-#define GSE_ERR(fmt, args...)    do{}while(0)
-#define GSE_LOG(fmt, args...)    do{}while(0)
-#endif
 /*----------------------------------------------------------------------------*/
 static struct data_resolution bma222_data_resolution[1] = {
  /* combination by {FULL_RES,RANGE}*/
@@ -441,7 +433,7 @@ static int BMA222_ReadOffset(struct i2c_client *client, s8 ofs[BMA222_AXES_NUM])
 		GSE_ERR("error: %d\n", err);
 	}
 #endif
-	//GSE_LOG("offesx=%x, y=%x, z=%x",ofs[0],ofs[1],ofs[2]);
+	//printk("offesx=%x, y=%x, z=%x",ofs[0],ofs[1],ofs[2]);
 	
 	return err;    
 }
@@ -674,7 +666,7 @@ static int BMA222_SetDataFormat(struct i2c_client *client, u8 dataformat)
    
 	if(bma_i2c_read_block(client, BMA222_REG_DATA_FORMAT, databuf, 0x01))
 	{
-		GSE_LOG("bma222 read Dataformat failt \n");
+		printk("bma222 read Dataformat failt \n");
 		return BMA222_ERR_I2C;
 	}
 	mdelay(1);
@@ -687,7 +679,7 @@ static int BMA222_SetDataFormat(struct i2c_client *client, u8 dataformat)
 		return BMA222_ERR_I2C;
 	}
 	
-	//GSE_LOG("BMA222_SetDataFormat OK! \n");
+	//printk("BMA222_SetDataFormat OK! \n");
 	mdelay(1);
 	return BMA222_SetDataResolution(obj);    
 }
@@ -699,7 +691,7 @@ static int BMA222_SetBWRate(struct i2c_client *client, u8 bwrate)
 
 	if(bma_i2c_read_block(client, BMA222_REG_BW_RATE, databuf, 0x01))
 	{
-		GSE_LOG("bma222 read rate failt \n");
+		printk("bma222 read rate failt \n");
 		return BMA222_ERR_I2C;
 	}
 	mdelay(1);
@@ -713,7 +705,7 @@ static int BMA222_SetBWRate(struct i2c_client *client, u8 bwrate)
 		return BMA222_ERR_I2C;
 	}
 	mdelay(1);
-	//GSE_LOG("BMA222_SetBWRate OK! \n");
+	//printk("BMA222_SetBWRate OK! \n");
 	
 	return BMA222_SUCCESS;    
 }
@@ -734,7 +726,7 @@ static int BMA222_SetIntEnable(struct i2c_client *client, u8 intenable)
 			{
 				return res;
 			}
-			//GSE_LOG("BMA222 disable interrupt ...\n");
+			//printk("BMA222 disable interrupt ...\n");
 		
 			/*for disable interrupt function*/
 			mdelay(1);
@@ -746,28 +738,28 @@ static int bma222_init_client(struct i2c_client *client, int reset_cali)
 {
 	struct bma222_i2c_data *obj = i2c_get_clientdata(client);
 	int res = 0;
-	GSE_LOG("bma222_init_client \n");
+	printk("bma222_init_client \n");
 
 	res = BMA222_CheckDeviceID(client); 
 	if(res != BMA222_SUCCESS)
 	{
 		return res;
 	}	
-	//GSE_LOG("BMA222_CheckDeviceID ok \n");
+	//printk("BMA222_CheckDeviceID ok \n");
 	
 	res = BMA222_SetBWRate(client, BMA222_BW_25HZ);
 	if(res != BMA222_SUCCESS ) 
 	{
 		return res;
 	}
-	//GSE_LOG("BMA222_SetBWRate OK!\n");
+	//printk("BMA222_SetBWRate OK!\n");
 	
 	res = BMA222_SetDataFormat(client, BMA222_RANGE_2G);
 	if(res != BMA222_SUCCESS) 
 	{
 		return res;
 	}
-	//GSE_LOG("BMA222_SetDataFormat OK!\n");
+	//printk("BMA222_SetDataFormat OK!\n");
 
 	gsensor_gain.x = gsensor_gain.y = gsensor_gain.z = obj->reso->sensitivity;
 
@@ -777,14 +769,14 @@ static int bma222_init_client(struct i2c_client *client, int reset_cali)
 	{
 		return res;
 	}
-	//GSE_LOG("BMA222 disable interrupt function!\n");
+	//printk("BMA222 disable interrupt function!\n");
 	
 	res = BMA222_SetPowerMode(client, enable_status);//false);//
 		if(res != BMA222_SUCCESS)
 		{
 			return res;
 		}
-	//GSE_LOG("BMA222_SetPowerMode OK!\n");
+	//printk("BMA222_SetPowerMode OK!\n");
 
 
 	if(0 != reset_cali)
@@ -870,21 +862,23 @@ static int BMA222_ReadSensorData(struct i2c_client *client, char *buf, int bufsi
 		//GSE_LOG("raw data x=%d, y=%d, z=%d \n",obj->data[BMA222_AXIS_X],obj->data[BMA222_AXIS_Y],obj->data[BMA222_AXIS_Z]);
 		obj->data[BMA222_AXIS_X] += obj->cali_sw[BMA222_AXIS_X];
 		obj->data[BMA222_AXIS_Y] += obj->cali_sw[BMA222_AXIS_Y];
+#ifndef SLT_DRV_LXF_GSENSOR
 		obj->data[BMA222_AXIS_Z] += obj->cali_sw[BMA222_AXIS_Z];
-		
-		//GSE_LOG("cali_sw x=%d, y=%d, z=%d \n",obj->cali_sw[BMA150_AXIS_X],obj->cali_sw[BMA150_AXIS_Y],obj->cali_sw[BMA150_AXIS_Z]);
+		//shaohui del this for 
+#endif
+		//printk("cali_sw x=%d, y=%d, z=%d \n",obj->cali_sw[BMA150_AXIS_X],obj->cali_sw[BMA150_AXIS_Y],obj->cali_sw[BMA150_AXIS_Z]);
 		
 		/*remap coordinate*/
 		acc[obj->cvt.map[BMA222_AXIS_X]] = obj->cvt.sign[BMA222_AXIS_X]*obj->data[BMA222_AXIS_X];
 		acc[obj->cvt.map[BMA222_AXIS_Y]] = obj->cvt.sign[BMA222_AXIS_Y]*obj->data[BMA222_AXIS_Y];
 		acc[obj->cvt.map[BMA222_AXIS_Z]] = obj->cvt.sign[BMA222_AXIS_Z]*obj->data[BMA222_AXIS_Z];
-		//GSE_LOG("cvt x=%d, y=%d, z=%d \n",obj->cvt.sign[BMA150_AXIS_X],obj->cvt.sign[BMA150_AXIS_Y],obj->cvt.sign[BMA150_AXIS_Z]);
+		//printk("cvt x=%d, y=%d, z=%d \n",obj->cvt.sign[BMA150_AXIS_X],obj->cvt.sign[BMA150_AXIS_Y],obj->cvt.sign[BMA150_AXIS_Z]);
 
 
 		//GSE_LOG("Mapped gsensor data: %d, %d, %d!\n", acc[BMA150_AXIS_X], acc[BMA150_AXIS_Y], acc[BMA150_AXIS_Z]);
 
 		//Out put the mg
-		//GSE_LOG("mg acc=%d, GRAVITY=%d, sensityvity=%d \n",acc[BMA150_AXIS_X],GRAVITY_EARTH_1000,obj->reso->sensitivity);
+		//printk("mg acc=%d, GRAVITY=%d, sensityvity=%d \n",acc[BMA150_AXIS_X],GRAVITY_EARTH_1000,obj->reso->sensitivity);
 		acc[BMA222_AXIS_X] = acc[BMA222_AXIS_X] * GRAVITY_EARTH_1000 / obj->reso->sensitivity;
 		acc[BMA222_AXIS_Y] = acc[BMA222_AXIS_Y] * GRAVITY_EARTH_1000 / obj->reso->sensitivity;
 		acc[BMA222_AXIS_Z] = acc[BMA222_AXIS_Z] * GRAVITY_EARTH_1000 / obj->reso->sensitivity;		
@@ -1212,33 +1206,6 @@ static DRIVER_ATTR(trace,      S_IWUSR | S_IRUGO, show_trace_value,         stor
 static DRIVER_ATTR(status,     S_IRUGO, show_status_value,        NULL);
 static DRIVER_ATTR(powerstatus,               S_IRUGO, show_power_status_value,        NULL);
 
-#if 0//lisong add for direction debug start
-static ssize_t store_direction_debug(struct device_driver *ddri, const char *buf, size_t count)
-{
-	struct bma222_i2c_data *obj = obj_i2c_data;
-    unsigned long input_value;
-
-    if(buf != NULL && count != 0)
-	{
-		input_value  = (int)simple_strtoul(buf, NULL, 0);
-	}
-
-    hwmsen_get_convert(input_value, &obj->cvt);
-
-	return count;
-}
-
-//static ssize_t show_direction_debug(struct device_driver *ddri, char *buf)
-//{
-//	struct bma222_i2c_data *obj = obj_i2c_data;
-//
-//
-//	return 0;		
-//}
-
-static DRIVER_ATTR(direction_debug,0777,NULL,store_direction_debug);
-#endif//end
-
 /*----------------------------------------------------------------------------*/
 static struct driver_attribute *bma222_attr_list[] = {
 	&driver_attr_chipinfo,     /*chip information*/
@@ -1248,10 +1215,6 @@ static struct driver_attribute *bma222_attr_list[] = {
 	&driver_attr_trace,        /*trace log*/
 	&driver_attr_status,
 	&driver_attr_powerstatus,
-#if 0//lisong add for direction debug start
-    &driver_attr_direction_debug,
-#endif//end
-	
 };
 /*----------------------------------------------------------------------------*/
 static int bma222_create_attr(struct device_driver *driver) 

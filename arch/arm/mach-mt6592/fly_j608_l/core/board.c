@@ -32,6 +32,9 @@
 // Fix-me: marked for early porting
 #include <cust_gpio_usage.h>
 #include <cust_eint.h>
+
+#include <mach/mt_clkmgr.h>
+
 #if defined(CONFIG_MTK_COMBO) || defined(CONFIG_MTK_COMBO_MODULE)
 #include <mach/mtk_wcn_cmb_stub.h>
 
@@ -43,6 +46,371 @@ static void combo_fm_i2s_pin_off(void);
 #endif
 
 #endif
+
+
+
+
+#define ZERO_MS       0
+#define ONE_MS        1
+
+static sdio_irq_handler_t lte_sdio_eirq_handler = NULL;
+static void *lte_sdio_eirq_data = NULL;
+
+static pm_callback_t lte_sdio_pm_cb = NULL;
+static void *lte_sdio_pm_data = NULL;
+
+const static u32 lte_sdio_eint_pin = GPIO_LTE_SDIO_EINT_PIN;
+const static u32 lte_sdio_eint_num = CUST_EINT_LTE_SDIO_NUM;
+const static u32 lte_sdio_eint_m_eint = GPIO_LTE_SDIO_EINT_PIN_M_EINT;
+const static u32 lte_sdio_eint_m_gpio = GPIO_LTE_SDIO_EINT_PIN_M_GPIO;
+
+const static u32 lte_sdio_power_pin = GPIO_LTE_POWER_PIN;
+const static u32 lte_sdio_reset_pin = GPIO_LTE_RESET_PIN;
+const static u32 lte_sdio_reset_m_gpio = GPIO_LTE_RESET_PIN_M_GPIO;
+const static u32 lte_sdio_AP_wake_MD_pin = GPIO_LTE_WK_MD_PIN;
+const static u32 lte_sdio_AP_wake_MD_m_gpio = GPIO_LTE_WK_MD_PIN_M_GPIO;
+
+
+const static u32 lte_sdio_wd_int_pin = GPIO_LTE_WDT_EINT_PIN;
+const static u32 lte_sdio_wd_int_num = CUST_EINT_LTE_WDT_NUM;
+const static u32 lte_sdio_wd_int_m_eint = GPIO_LTE_WDT_EINT_PIN_M_EINT;
+const static u32 lte_sdio_wd_int_m_gpio = GPIO_LTE_WDT_EINT_PIN_M_GPIO;
+
+static sdio_irq_handler_t lte_sdio_wd_irq_handler = NULL;
+static void *lte_sdio_wd_irq_data = NULL;
+
+
+
+void lte_sdio_enable_eirq(void)
+{
+    //printk("[mt6290] interrupt enable~~ \r\n");
+    mt_eint_unmask(lte_sdio_eint_num);
+}
+
+void lte_sdio_disable_eirq(void)
+{
+    //printk("[mt6290] interrupt disable !! \r\n");
+    mt_eint_mask(lte_sdio_eint_num); 
+}
+
+unsigned int interrupt_count_lte =0;
+void lte_sdio_eirq_handler_stub(void)
+{
+    //printk("test mt6290 interrupt %d \r\n",interrupt_count_lte++);
+    if (lte_sdio_eirq_handler) {
+        lte_sdio_eirq_handler(lte_sdio_eirq_data);
+    }
+}
+
+void lte_sdio_request_eirq(sdio_irq_handler_t irq_handler, void *data)
+{
+    // GPIO related setting will set in codedws, no needs to set it any more.
+    
+    //mt_set_gpio_dir(lte_sdio_eint_pin, GPIO_DIR_IN);
+    //mt_set_gpio_pull_select(lte_sdio_eint_pin, GPIO_PULL_UP);
+    //mt_set_gpio_pull_enable(lte_sdio_eint_pin, GPIO_PULL_ENABLE);
+
+    //mt_eint_set_sens(lte_sdio_eint_num, MT_LEVEL_SENSITIVE); 
+    //mt_eint_set_hw_debounce(lte_sdio_eint_num, ZERO_MS); 
+    mt_eint_registration(lte_sdio_eint_num,
+        EINTF_TRIGGER_LOW,
+        lte_sdio_eirq_handler_stub,
+        0);
+    mt_eint_mask(lte_sdio_eint_num);/*CUST_EINT_WIFI_NUM */
+
+    lte_sdio_eirq_handler = irq_handler;
+    lte_sdio_eirq_data    = data;
+}
+
+
+static void lte_sdio_register_pm(pm_callback_t pm_cb, void *data)
+{
+    /*printk( KERN_INFO "combo_sdio_register_pm (0x%p, 0x%p)\n", pm_cb, data);*/
+    /* register pm change callback */
+    lte_sdio_pm_cb = pm_cb;
+    lte_sdio_pm_data = data;
+  
+}
+
+void lte_sdio_device_power_on(void)
+{
+    mt_set_gpio_out(lte_sdio_power_pin, GPIO_OUT_ONE);
+    mdelay(100);
+    mt_set_gpio_out(lte_sdio_reset_pin, GPIO_OUT_ONE);
+    mt_set_gpio_out(lte_sdio_AP_wake_MD_pin, GPIO_OUT_ONE); 
+    // GPIO related setting will set in codedws, only control the output value.
+    //mt_set_gpio_dir(lte_sdio_power_pin, GPIO_DIR_OUT);
+    //mt_set_gpio_dir(lte_sdio_reset_pin, GPIO_DIR_OUT);
+
+    CLKM_32K(true);
+    printk(KERN_ERR "[lte] turn on 32K output !!");
+    mt_set_gpio_pull_enable(lte_sdio_eint_pin, GPIO_PULL_ENABLE); 
+    
+    mdelay(50);
+}
+
+void lte_sdio_device_power_off(void)
+{
+    mt_set_gpio_out(lte_sdio_power_pin, GPIO_OUT_ZERO);
+    mt_set_gpio_out(lte_sdio_reset_pin, GPIO_OUT_ZERO);
+    mt_set_gpio_out(lte_sdio_AP_wake_MD_pin, GPIO_OUT_ZERO);
+    // GPIO related setting will set in codedws, only control the output value.
+    //mt_set_gpio_dir(lte_sdio_power_pin, GPIO_DIR_OUT);
+    //mt_set_gpio_dir(lte_sdio_reset_pin, GPIO_DIR_OUT);
+
+    mt_set_gpio_pull_enable(lte_sdio_eint_pin, GPIO_PULL_DISABLE);
+    CLKM_32K(false);
+    printk(KERN_ERR "[lte] turn OFF 32K output !!");
+    
+    mdelay(60);
+}
+
+void lte_sdio_card_identify(void)
+{
+    pm_message_t state = { .event = PM_EVENT_USER_RESUME };
+    printk("lte_sdio_card_identify ... \n");
+    
+     /* 1. disable sdio eirq */
+	lte_sdio_disable_eirq();
+    //mt_set_gpio_pull_enable(lte_sdio_eint_pin, GPIO_PULL_DISABLE);
+    
+    /* 2. call sd callback */
+    if (lte_sdio_pm_cb) {
+        printk( "lte_sdio_pm_cb(PM_EVENT_USER_RESUME, 0x%p, 0x%p) \n", lte_sdio_pm_cb, lte_sdio_pm_data);
+        lte_sdio_pm_cb(state, lte_sdio_pm_data);
+    }
+    else {
+        printk(KERN_WARNING "lte_sdio_card_identify no sd callback!!\n");
+    }
+}
+
+void lte_sdio_card_remove(void)
+{
+    pm_message_t state = { .event = PM_EVENT_USER_SUSPEND };
+	
+    printk("lte_sdio_card_remove!! \n");
+	
+    /* 1. call sd callback */
+    if (lte_sdio_pm_cb)
+    {
+        printk("lte_sdio_off(PM_EVENT_USER_SUSPEND, 0x%p, 0x%p) \n", lte_sdio_pm_cb, lte_sdio_pm_data);
+        lte_sdio_pm_cb(state, lte_sdio_pm_data);
+    }
+    else 
+    {
+        printk(KERN_WARNING "lte_sdio_card_remove no sd callback!!\n");
+    }
+
+    /* 2. disable sdio eirq */
+    lte_sdio_disable_eirq();
+    
+    //printk("[lte] set LTE_EINT input pull down\n");
+    //mt_set_gpio_mode(lte_sdio_eint_pin, lte_sdio_eint_m_gpio); /* GPIO mode */
+    //mt_set_gpio_dir(lte_sdio_eint_pin, GPIO_DIR_IN);
+    //mt_set_gpio_pull_select(lte_sdio_eint_pin, GPIO_PULL_DOWN);
+    //mt_set_gpio_pull_enable(lte_sdio_eint_pin, GPIO_PULL_ENABLE);
+    
+}
+
+void lte_sdio_on(void)
+{
+    pm_message_t state = { .event = PM_EVENT_USER_RESUME };
+    printk("lte_sdio_on ..");
+
+    mt_set_gpio_out(lte_sdio_power_pin, GPIO_OUT_ONE);
+    mdelay(100);
+    mt_set_gpio_out(lte_sdio_reset_pin, GPIO_OUT_ONE);
+    mt_set_gpio_out(lte_sdio_AP_wake_MD_pin, GPIO_OUT_ONE); 
+    //mt_set_gpio_dir(lte_sdio_eint_pin, GPIO_DIR_IN);
+    // GPIO related setting will set in codedws, only control the output value.
+    //mt_set_gpio_dir(lte_sdio_power_pin, GPIO_DIR_OUT);
+    //mt_set_gpio_dir(lte_sdio_reset_pin, GPIO_DIR_OUT);
+
+    CLKM_32K(true);
+    printk(KERN_ERR "[lte] turn on 32K output !!");
+    
+    mdelay(50);
+
+    /* 1. disable sdio eirq */
+	lte_sdio_disable_eirq();
+    mt_set_gpio_pull_enable(lte_sdio_eint_pin, GPIO_PULL_ENABLE); 
+    //mt_set_gpio_mode(lte_sdio_eint_pin, lte_sdio_eint_m_eint); /* EINT mode */
+    
+    /* 2. call sd callback */
+    if (lte_sdio_pm_cb) {
+        printk( "lte_sdio_pm_cb(PM_EVENT_USER_RESUME, 0x%p, 0x%p) \n", lte_sdio_pm_cb, lte_sdio_pm_data);
+        lte_sdio_pm_cb(state, lte_sdio_pm_data);
+    }
+    else {
+        printk(KERN_WARNING "lte_sdio_on no sd callback!!\n");
+    }
+}
+
+void lte_sdio_off(void) 
+{
+    pm_message_t state = { .event = PM_EVENT_USER_SUSPEND };
+	
+    printk("lte_sdio_off~~~!\n");
+	
+    /* 1. call sd callback */
+    if (lte_sdio_pm_cb)
+    {
+        printk("lte_sdio_off(PM_EVENT_USER_SUSPEND, 0x%p, 0x%p) \n", lte_sdio_pm_cb, lte_sdio_pm_data);
+        lte_sdio_pm_cb(state, lte_sdio_pm_data);
+    }
+    else 
+    {
+        printk(KERN_ERR "lte_sdio_off no sd callback!!\n");
+    }
+	
+    /* 2. disable sdio eirq */
+    lte_sdio_disable_eirq();
+    //printk("[lte] set LTE_EINT input pull down\n");
+    //mt_set_gpio_mode(lte_sdio_eint_pin, lte_sdio_eint_m_gpio); /* GPIO mode */
+    //mt_set_gpio_dir(lte_sdio_eint_pin, GPIO_DIR_IN);
+    //mt_set_gpio_pull_select(lte_sdio_eint_pin, GPIO_PULL_DOWN);
+    mt_set_gpio_pull_enable(lte_sdio_eint_pin, GPIO_PULL_DISABLE);
+
+    mt_set_gpio_out(lte_sdio_power_pin, GPIO_OUT_ZERO);
+    mt_set_gpio_out(lte_sdio_reset_pin, GPIO_OUT_ZERO);
+
+    /* close AP_wake_MD pin function */
+    mt_set_gpio_out(lte_sdio_AP_wake_MD_pin,GPIO_OUT_ZERO);
+    // GPIO related setting will set in codedws, only control the output value.
+    //mt_set_gpio_dir(lte_sdio_power_pin, GPIO_DIR_OUT);
+    //mt_set_gpio_dir(lte_sdio_reset_pin, GPIO_DIR_OUT);
+
+    CLKM_32K(false);
+    printk(KERN_ERR "[lte] turn OFF 32K output !!");
+    
+    mdelay(60);
+    
+}
+
+
+void lte_sdio_resetdevice(void)
+{
+    // GPIO related setting will set in codedws, no needs to set it any more.
+    
+	//mt_set_gpio_dir(lte_sdio_reset_pin, GPIO_DIR_OUT);
+	//mt_set_gpio_pull_select(lte_sdio_reset_pin, GPIO_PULL_UP);
+	//mt_set_gpio_pull_enable(lte_sdio_reset_pin, GPIO_PULL_ENABLE);
+	
+	mt_set_gpio_out(lte_sdio_reset_pin,GPIO_OUT_ONE);
+	//printk("REBOT LTE MD by reset pin!!!!!!!!!!!!!!!!!!!!!!!\r\n");
+	mdelay(20);
+	mt_set_gpio_out(lte_sdio_reset_pin,GPIO_OUT_ZERO);
+	printk("REBOT LTE MD by reset pin!!!!!!!!!!!!!!!!!!!!!!!\r\n");
+	mdelay(20);
+	mt_set_gpio_out(lte_sdio_reset_pin,GPIO_OUT_ONE);
+        mdelay(50);
+
+}
+
+
+void lte_sdio_trigger_wakedevice(void)
+{
+	// GPIO related setting will set in codedws, no needs to set it any more.
+	
+    //mt_set_gpio_dir(lte_sdio_AP_wake_MD_pin, GPIO_DIR_OUT);
+    //mt_set_gpio_pull_select(lte_sdio_AP_wake_MD_pin, GPIO_PULL_UP);
+    //mt_set_gpio_pull_enable(lte_sdio_AP_wake_MD_pin, GPIO_PULL_ENABLE);
+
+    mt_set_gpio_out(lte_sdio_AP_wake_MD_pin,GPIO_OUT_ZERO);
+	
+}
+
+
+void lte_sdio_turnoff_wakedevice(void)
+{
+	// GPIO related setting will set in codedws, no needs to set it any more.
+	
+    mt_set_gpio_out(lte_sdio_AP_wake_MD_pin,GPIO_OUT_ONE);
+    //mt_set_gpio_dir(lte_sdio_AP_wake_MD_pin, GPIO_DIR_OUT);
+
+}
+
+void lte_sdio_enable_wd_eirq(void)
+{
+    mt_eint_unmask(lte_sdio_wd_int_num);
+}
+
+void lte_sdio_disable_wd_eirq(void)
+{
+    mt_eint_mask(lte_sdio_wd_int_num); 
+}
+
+void lte_sdio_wd_irq_handler_stub(void)
+{
+    if (lte_sdio_wd_irq_handler) {
+        lte_sdio_wd_irq_handler(lte_sdio_wd_irq_data);
+    }
+}
+
+void lte_sdio_request_wd_eirq(sdio_irq_handler_t irq_handler, void *data)
+{
+	// GPIO related setting will set in codedws, no needs to set it any more.
+	
+    //mt_set_gpio_dir(lte_sdio_wd_int_pin, GPIO_DIR_IN);
+    //mt_set_gpio_pull_select(lte_sdio_wd_int_pin, GPIO_PULL_UP);
+    //mt_set_gpio_pull_enable(lte_sdio_wd_int_pin, GPIO_PULL_ENABLE);
+
+    //mt_eint_set_sens(lte_sdio_wd_int_num, MT_LEVEL_SENSITIVE); 
+    mt_eint_set_hw_debounce(lte_sdio_wd_int_num, ONE_MS); 
+    mt_eint_registration(lte_sdio_wd_int_num,
+        EINTF_TRIGGER_LOW,
+        lte_sdio_wd_irq_handler_stub,
+        0);
+    mt_eint_mask(lte_sdio_wd_int_num);/*CUST_EINT_WIFI_NUM */
+
+    lte_sdio_wd_irq_handler = irq_handler;
+    lte_sdio_wd_irq_data    = data;
+}
+
+
+void lte_sdio_set_eint_for_IPO(void)
+{
+
+    mt_eint_set_sens(lte_sdio_eint_num, MT_LEVEL_SENSITIVE); 
+    mt_eint_set_polarity(lte_sdio_eint_num, MT_EINT_POL_NEG);
+    
+    mt_eint_set_sens(lte_sdio_wd_int_num, MT_LEVEL_SENSITIVE); 
+    mt_eint_set_polarity(lte_sdio_wd_int_num, MT_EINT_POL_NEG);
+    mt_eint_set_hw_debounce(lte_sdio_wd_int_num, ONE_MS); 
+}
+
+
+int lte_sdio_get_wd_eint_value(void)
+{
+    return mt_get_gpio_in(lte_sdio_wd_int_num);
+}
+
+
+EXPORT_SYMBOL_GPL(lte_sdio_enable_eirq);
+EXPORT_SYMBOL_GPL(lte_sdio_disable_eirq);
+EXPORT_SYMBOL_GPL(lte_sdio_request_eirq);
+
+EXPORT_SYMBOL_GPL(lte_sdio_device_power_on);
+EXPORT_SYMBOL_GPL(lte_sdio_device_power_off);
+EXPORT_SYMBOL_GPL(lte_sdio_card_identify);
+EXPORT_SYMBOL_GPL(lte_sdio_card_remove);
+
+EXPORT_SYMBOL_GPL(lte_sdio_on);
+EXPORT_SYMBOL_GPL(lte_sdio_off);
+
+EXPORT_SYMBOL_GPL(lte_sdio_resetdevice);
+EXPORT_SYMBOL_GPL(lte_sdio_trigger_wakedevice);
+EXPORT_SYMBOL_GPL(lte_sdio_turnoff_wakedevice);
+
+EXPORT_SYMBOL_GPL(lte_sdio_enable_wd_eirq);
+EXPORT_SYMBOL_GPL(lte_sdio_disable_wd_eirq);
+EXPORT_SYMBOL_GPL(lte_sdio_request_wd_eirq);
+
+EXPORT_SYMBOL_GPL(lte_sdio_set_eint_for_IPO);
+EXPORT_SYMBOL_GPL(lte_sdio_get_wd_eint_value);
+
+
+
 #if defined(CONFIG_MTK_COMBO) || defined(CONFIG_MTK_COMBO_MODULE)
     /* combo chip */
     #if defined(MTK_MT6620)  
@@ -123,6 +491,200 @@ static pm_callback_t combo_sdio_pm_cb = NULL;
 
 #else
 #endif
+
+#if defined(CONFIG_MTK_EMCS_SDIO_SLOT)
+static sdio_irq_handler_t emcs_sdio_eirq_handler = NULL;
+static void *emcs_sdio_eirq_data = NULL;
+
+static pm_callback_t emcs_sdio_pm_cb = NULL;
+static void *emcs_sdio_pm_data = NULL;
+
+    #if (CONFIG_MTK_EMCS_SDIO_SLOT == 2)
+        const static u32 emcs_sdio_eint_pin = GPIO_NFC_EINT_PIN;
+        const static u32 emcs_sdio_eint_num = CUST_EINT_NFC_NUM;
+        const static u32 emcs_sdio_eint_m_eint = GPIO_NFC_EINT_PIN_M_MDEINT;
+        const static u32 emcs_sdio_eint_m_gpio = GPIO_NFC_EINT_PIN_M_GPIO;
+    #elif (CONFIG_MTK_EMCS_SDIO_SLOT == 1)
+        const static u32 emcs_sdio_eint_pin = GPIO_NFC_EINT_PIN;
+        const static u32 emcs_sdio_eint_num = CUST_EINT_NFC_NUM;
+        const static u32 emcs_sdio_eint_m_eint = GPIO_NFC_EINT_PIN_M_MDEINT;
+        const static u32 emcs_sdio_eint_m_gpio = GPIO_NFC_EINT_PIN_M_GPIO;
+    #else
+    #error "unsupported CONFIG_MTK_EMCS_SDIO_SLOT" CONFIG_MTK_EMCS_SDIO_SLOT
+    #endif
+#else
+#endif
+
+#if defined(CONFIG_MTK_EMCS_SDIO_SLOT)
+void emcs_sdio_enable_eirq(void)
+{
+    mt_eint_unmask(emcs_sdio_eint_num);/* CUST_EINT_WIFI_NUM */
+}
+
+void emcs_sdio_disable_eirq(void)
+{
+    mt_eint_mask(emcs_sdio_eint_num); /* CUST_EINT_WIFI_NUM */
+}
+unsigned int interrupt_count_emcs =0;
+void emcs_sdio_eirq_handler_stub(void)
+{
+    // printk("interrupt %d \r\n",interrupt_count_emcs++);
+    if (emcs_sdio_eirq_handler) {
+        emcs_sdio_eirq_handler(emcs_sdio_eirq_data);
+    }
+}
+
+void emcs_sdio_request_eirq(sdio_irq_handler_t irq_handler, void *data)
+{
+    mt_set_gpio_mode(emcs_sdio_eint_pin, emcs_sdio_eint_m_gpio); /* GPIO mode */
+    mt_set_gpio_dir(emcs_sdio_eint_pin, GPIO_DIR_IN);
+    mt_set_gpio_pull_select(emcs_sdio_eint_pin, GPIO_PULL_UP);
+    mt_set_gpio_pull_enable(emcs_sdio_eint_pin, GPIO_PULL_ENABLE);
+
+    mt_eint_set_sens(emcs_sdio_eint_num, MT_LEVEL_SENSITIVE); 
+    mt_eint_set_hw_debounce(emcs_sdio_eint_num, CUST_EINT_DEBOUNCE_DISABLE); 
+    mt_eint_registration(emcs_sdio_eint_num,
+        CUST_EINTF_TRIGGER_LOW,
+        emcs_sdio_eirq_handler_stub,
+        0);
+    mt_eint_mask(emcs_sdio_eint_num);/*CUST_EINT_WIFI_NUM */
+
+    emcs_sdio_eirq_handler = irq_handler;
+    emcs_sdio_eirq_data    = data;
+}
+
+const static u32 emcs_wake_up_pin = 2;
+const static u32 emcs_wake_up_m_gpio = GPIO_NFC_EINT_PIN_M_GPIO;
+
+void emcs_wakedevice(void)
+{
+	mt_set_gpio_mode(emcs_wake_up_pin, emcs_wake_up_m_gpio); /* GPIO mode */
+    mt_set_gpio_dir(emcs_wake_up_pin, GPIO_DIR_OUT);
+    mt_set_gpio_pull_select(emcs_wake_up_pin, GPIO_PULL_UP);
+    mt_set_gpio_pull_enable(emcs_wake_up_pin, GPIO_PULL_ENABLE);
+
+	//pull high.
+
+	//delay.
+
+	//pull low.
+	
+}
+const static u32 emcs_reset_pin = 78;
+const static u32 emcs_reset_m_gpio = GPIO_NFC_EINT_PIN_M_GPIO;
+
+void emcs_resetdevice(void)
+{
+	mt_set_gpio_mode(emcs_reset_pin, emcs_reset_m_gpio); /* GPIO mode */
+	mt_set_gpio_dir(emcs_reset_pin, GPIO_DIR_OUT);
+	mt_set_gpio_pull_select(emcs_reset_pin, GPIO_PULL_UP);
+	mt_set_gpio_pull_enable(emcs_reset_pin, GPIO_PULL_ENABLE);
+	
+	mt_set_gpio_out(emcs_reset_pin,GPIO_OUT_ONE);
+	printk("REBOT MD!!!!!!!!!!!!!!!!!!!!!!!\r\n");
+	mdelay(150);
+	mt_set_gpio_out(emcs_reset_pin,GPIO_OUT_ZERO);
+	printk("REBOT MD!!!!!!!!!!!!!!!!!!!!!!!\r\n");
+	mdelay(150);
+	mt_set_gpio_out(emcs_reset_pin,GPIO_OUT_ONE);
+	//delay.
+	//pull low.
+		
+}
+
+void emcs_sdio_on(void)
+{
+    pm_message_t state = { .event = PM_EVENT_USER_RESUME };
+    printk("MT6290m power on ..");
+    
+    mt_set_gpio_out(lte_sdio_power_pin, GPIO_OUT_ONE);
+    mt_set_gpio_out(lte_sdio_reset_pin, GPIO_OUT_ONE);
+    mt_set_gpio_dir(lte_sdio_power_pin, GPIO_DIR_OUT);
+    mt_set_gpio_dir(lte_sdio_reset_pin, GPIO_DIR_OUT);
+    
+    mdelay(300);
+
+    printk("emcs_sdio_on ..");
+	#if 0
+	mt_set_gpio_pull_enable(GPIO92, GPIO_PULL_DOWN);	//->CLK
+    mt_set_gpio_pull_select(GPIO92, GPIO_PULL_ENABLE);		
+    mt_set_gpio_pull_enable(GPIO91, GPIO_PULL_DOWN);	//->CMD
+    mt_set_gpio_pull_select(GPIO91, GPIO_PULL_ENABLE);
+    mt_set_gpio_pull_enable(GPIO94, GPIO_PULL_DOWN);	//->DAT0
+    mt_set_gpio_pull_select(GPIO94, GPIO_PULL_ENABLE);
+    mt_set_gpio_pull_enable(GPIO90, GPIO_PULL_DOWN);	//->DAT1
+    mt_set_gpio_pull_select(GPIO90, GPIO_PULL_ENABLE);
+    mt_set_gpio_pull_enable(GPIO89, GPIO_PULL_DOWN);	//->DAT2
+    mt_set_gpio_pull_select(GPIO89, GPIO_PULL_ENABLE);
+    mt_set_gpio_pull_enable(GPIO93, GPIO_PULL_DOWN);	//->DAT3
+    mt_set_gpio_pull_select(GPIO93, GPIO_PULL_ENABLE);
+    #endif
+    /* 1. disable sdio eirq */
+	emcs_sdio_disable_eirq();
+    mt_set_gpio_pull_enable(emcs_sdio_eint_pin, GPIO_PULL_DISABLE); /* GPIO_WIFI_EINT_PIN */
+    mt_set_gpio_mode(emcs_sdio_eint_pin, emcs_sdio_eint_m_eint); /* EINT mode */
+    
+    /* 2. call sd callback */
+    if (emcs_sdio_pm_cb) {
+        printk( "emcs_sdio_pm_cb(PM_EVENT_USER_RESUME, 0x%p, 0x%p) \n", emcs_sdio_pm_cb, emcs_sdio_pm_data);
+        emcs_sdio_pm_cb(state, emcs_sdio_pm_data);
+    }
+    else {
+        printk(KERN_WARNING "combo_sdio_on no sd callback!!\n");
+    }
+}
+
+void emcs_sdio_off(void) 
+{
+    pm_message_t state = { .event = PM_EVENT_USER_SUSPEND };
+	
+    printk("emcs_sdio_off~~~!\n");
+	
+    /* 1. call sd callback */
+    if (emcs_sdio_pm_cb)
+    {
+        printk("emcs_sdio_off(PM_EVENT_USER_SUSPEND, 0x%p, 0x%p) \n", emcs_sdio_pm_cb, emcs_sdio_pm_data);
+        emcs_sdio_pm_cb(state, emcs_sdio_pm_data);
+    }
+    else 
+    {
+        printk(KERN_WARNING "emcs_sdio_off no sd callback!!\n");
+    }
+	
+    /* 2. disable sdio eirq */
+    emcs_sdio_disable_eirq();
+    printk("[emcs] set EMCS_EINT input pull down\n");
+    mt_set_gpio_mode(emcs_sdio_eint_pin, emcs_sdio_eint_m_gpio); /* GPIO mode */
+    mt_set_gpio_dir(emcs_sdio_eint_pin, GPIO_DIR_IN);
+    mt_set_gpio_pull_select(emcs_sdio_eint_pin, GPIO_PULL_DOWN);
+    mt_set_gpio_pull_enable(emcs_sdio_eint_pin, GPIO_PULL_ENABLE);
+
+    mt_set_gpio_out(lte_sdio_power_pin, GPIO_OUT_ZERO);
+    mt_set_gpio_out(lte_sdio_reset_pin, GPIO_OUT_ZERO);
+    mt_set_gpio_dir(lte_sdio_power_pin, GPIO_DIR_OUT);
+    mt_set_gpio_dir(lte_sdio_reset_pin, GPIO_DIR_OUT);
+
+    mdelay(300);
+}
+static void emcs_sdio_register_pm(pm_callback_t pm_cb, void *data)
+{
+    /*printk( KERN_INFO "combo_sdio_register_pm (0x%p, 0x%p)\n", pm_cb, data);*/
+    /* register pm change callback */
+    emcs_sdio_pm_cb = pm_cb;
+    emcs_sdio_pm_data = data;
+}
+EXPORT_SYMBOL_GPL(emcs_sdio_enable_eirq);
+EXPORT_SYMBOL_GPL(emcs_sdio_disable_eirq);
+EXPORT_SYMBOL_GPL(emcs_sdio_request_eirq);
+EXPORT_SYMBOL_GPL(emcs_sdio_on);
+EXPORT_SYMBOL_GPL(emcs_sdio_off);
+EXPORT_SYMBOL_GPL(emcs_wakedevice);
+EXPORT_SYMBOL_GPL(emcs_resetdevice);
+
+
+#endif
+
+
 /*=======================================================================*/
 /* Board Specific Devices Power Management                               */
 /*=======================================================================*/
@@ -838,7 +1400,6 @@ int mt_wifi_resume(pm_message_t state)
 
 #if defined(CONFIG_MTK_COMBO) || defined(CONFIG_MTK_COMBO_MODULE)
     /* combo chip product: notify combo driver to turn on Wi-Fi */
-    mtk_wcn_cmb_stub_func_ctrl(COMBO_FUNC_TYPE_WIFI, 1);
 
 #else /* standalone product */
 #endif
@@ -887,7 +1448,6 @@ int mt_wifi_suspend(pm_message_t state)
     }
     else {
         /* combo chip product, notify combo driver */
-        mtk_wcn_cmb_stub_func_ctrl(COMBO_FUNC_TYPE_WIFI, 0);
     }
     #endif
 
@@ -965,23 +1525,23 @@ EXPORT_SYMBOL(mt_wifi_power_off);
 	    .cmd_edge       = MSDC_SMPL_FALLING,
 		.rdata_edge 	= MSDC_SMPL_FALLING,
 		.wdata_edge 	= MSDC_SMPL_FALLING,
-	    .clk_drv        = 2,
+	    .clk_drv        = 4,
 	    .cmd_drv        = 2,
 	    .dat_drv        = 2,
 	    .data_pins      = 8,
 	    .data_offset    = 0,
 	    .flags          = MSDC_SYS_SUSPEND | MSDC_HIGHSPEED | MSDC_UHS1 | MSDC_DDR,
-	    .dat0rddly		= 0,
-		.dat1rddly		= 0,
-		.dat2rddly		= 0,
-		.dat3rddly		= 0,
-		.dat4rddly		= 0,
-		.dat5rddly		= 0,
-		.dat6rddly		= 0,
-		.dat7rddly		= 0,
-		.datwrddly		= 0,
-		.cmdrrddly		= 0,
-		.cmdrddly		= 0,
+	    .dat0rddly		= 0xa,
+			.dat1rddly		= 0,
+			.dat2rddly		= 0,
+			.dat3rddly		= 0,
+			.dat4rddly		= 0,
+			.dat5rddly		= 0,
+			.dat6rddly		= 0,
+			.dat7rddly		= 0,
+			.datwrddly		= 0,
+			.cmdrrddly		= 0,
+			.cmdrddly		= 0,
 	    .host_function	= MSDC_EMMC,
 	    .boot			= MSDC_BOOT_EN,
 	};
@@ -1008,10 +1568,9 @@ struct msdc_hw msdc1_hw = {
     .data_pins      = 4,
     .data_offset    = 0,
 #ifdef CUST_EINT_MSDC1_INS_NUM
-    .flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_CD_PIN_EN | MSDC_REMOVABLE | MSDC_HIGHSPEED | MSDC_UHS1 |MSDC_DDR | MSDC_SD_NOSUPPORT_104,
-    
+    .flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_HIGHSPEED | MSDC_UHS1 |MSDC_DDR | MSDC_CD_PIN_EN | MSDC_REMOVABLE, 
 #else
-    .flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_HIGHSPEED | MSDC_UHS1 |MSDC_DDR | MSDC_SD_NOSUPPORT_104,   
+    .flags          = MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_HIGHSPEED | MSDC_UHS1 |MSDC_DDR,   
 #endif
   	  .dat0rddly		= 0,
 			.dat1rddly		= 0,
@@ -1063,6 +1622,89 @@ struct msdc_hw msdc1_hw = {
 	    .disable_sdio_eirq = combo_sdio_disable_eirq,
 	    .register_pm       = combo_sdio_register_pm,
 	};
+  
+    #elif defined(CONFIG_MTK_LTE_TEST_SDIO_SLOT) && (CONFIG_MTK_LTE_TEST_SDIO_SLOT == 2)
+        
+    struct msdc_hw msdc2_hw = {
+        .clk_src        = MSDC_CLKSRC_200MHZ,
+        .cmd_edge       = MSDC_SMPL_RISING,
+        .rdata_edge     = MSDC_SMPL_RISING,
+        .wdata_edge     = MSDC_SMPL_RISING,
+        //.cmd_edge       = MSDC_SMPL_FALLING,
+	    //.rdata_edge     = MSDC_SMPL_FALLING,
+    	//.wdata_edge     = MSDC_SMPL_FALLING,
+        .clk_drv        = 4,
+        .cmd_drv        = 4,
+        .dat_drv        = 4,
+        .data_pins      = 4,
+        .data_offset    = 0,
+
+        //.flags          = MSDC_SYS_SUSPEND | MSDC_CD_PIN_EN | MSDC_REMOVABLE | MSDC_HIGHSPEED | MSDC_UHS1 |MSDC_DDR,
+        .flags          =  MSDC_EXT_SDIO_IRQ | MSDC_REMOVABLE | MSDC_HIGHSPEED | MSDC_UHS1,
+          .dat0rddly        = 0x0,
+                .dat1rddly      = 0x0,
+                .dat2rddly      = 0x0,
+                .dat3rddly      = 0x0,
+                .dat4rddly      = 0,
+                .dat5rddly      = 0,
+                .dat6rddly      = 0,
+                .dat7rddly      = 0,
+                .datwrddly      = 0,
+                .cmdrrddly      = 0,
+                .cmdrddly       = 0x0,
+        .cmdrtactr_sdr50        = 0x1,
+        .wdatcrctactr_sdr50     = 0x1,
+        .intdatlatcksel_sdr50   = 0x0,
+        .cmdrtactr_sdr200       = 0x3,
+        .wdatcrctactr_sdr200    = 0x3,
+        .intdatlatcksel_sdr200  = 0x0,
+        //.host_function    = MSDC_SD,
+        .host_function  = MSDC_SDIO,
+        .boot           = 0,
+        .cd_level       = MSDC_CD_LOW,
+        .request_sdio_eirq = lte_sdio_request_eirq,
+        .enable_sdio_eirq  = lte_sdio_enable_eirq,
+        .disable_sdio_eirq = lte_sdio_disable_eirq,
+        .register_pm    = lte_sdio_register_pm,
+    };
+    
+    #elif defined(CONFIG_MTK_EMCS_SDIO_SLOT) && (CONFIG_MTK_EMCS_SDIO_SLOT == 2)
+   /* MSDC2 settings for MT6290 combo connectivity chip */
+	struct msdc_hw msdc2_hw = {	    
+		.clk_src        = MSDC_CLKSRC_200MHZ,
+	    .cmd_edge       = MSDC_SMPL_FALLING,
+	    .rdata_edge     = MSDC_SMPL_FALLING,
+    	.wdata_edge     = MSDC_SMPL_FALLING,
+	    .clk_drv        = 3,
+    	.cmd_drv        = 3,
+    	.dat_drv        = 3,
+	    .data_pins      = 4,
+	    .data_offset    = 0,
+	    //MT6620 use External IRQ, wifi uses high speed. here wifi manage his own suspend and resume, does not support hot plug
+	    .flags          = MSDC_SDIO_FLAG,//MSDC_SYS_SUSPEND | MSDC_WP_PIN_EN | MSDC_CD_PIN_EN | MSDC_REMOVABLE,
+	    .dat0rddly		= 0,
+			.dat1rddly		= 0,
+			.dat2rddly		= 0,
+			.dat3rddly		= 0,
+			.dat4rddly		= 0,
+			.dat5rddly		= 0,
+			.dat6rddly		= 0,
+			.dat7rddly		= 0,
+			.datwrddly		= 0,
+			.cmdrrddly		= 0,
+			.cmdrddly		= 0,
+	    .host_function	= MSDC_SDIO,
+	    .boot			= 0,
+	    .request_sdio_eirq = emcs_sdio_request_eirq,
+	    .enable_sdio_eirq  = emcs_sdio_enable_eirq,
+	    .disable_sdio_eirq = emcs_sdio_disable_eirq,
+	    .register_pm       = emcs_sdio_register_pm,
+	    //.request_sdio_eirq = lte_sdio_request_eirq,
+	    //.enable_sdio_eirq  = lte_sdio_enable_eirq,
+	    //.disable_sdio_eirq = lte_sdio_disable_eirq,
+        //.register_pm    = lte_sdio_register_pm,
+	};
+
     #else
 
 #if 0

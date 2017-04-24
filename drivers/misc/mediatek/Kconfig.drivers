@@ -481,6 +481,10 @@ config MTK_AUDIO_EXTCODEC_SUPPORT
 config MTK_CM36283
 	bool "CM36283 for MediaTek package"
 	default n
+	
+config MTK_LTR553
+	bool "LTR553 for MediaTek package"
+	default n
 
 config MTK_TMD2771
 	bool "TMD2771 for MediaTek package"
@@ -548,8 +552,8 @@ config MTK_BMA2XX
 	bool "BMA2XX for MediaTek package"
 	default n
 
-config MTK_BMA222E
-	bool "BMA222E for MediaTek package"
+config MTK_BMA223
+	bool "BMA223 for MediaTek package"
 	default n
 
 config MTK_BMA222E_NEW
@@ -997,6 +1001,12 @@ config MTK_UMTS_TDD128_MODE
 	  distinguish TDD, e.g. TDD modem, TDD HW,
 	  TDD specific customization, etc. TDD projects need to enable this
 	  feature option, non-TDD projects must disable this feature option.
+
+config MTK_EEMCS_DRIVER
+	bool "MTK_EEMCS_DRIVER"
+	help
+	  MTK_EEMCS_DRIVER=yes	  
+
 
 config MTK_SIM1_SOCKET_TYPE
 	string "MTK_SIM1_SOCKET_TYPE"

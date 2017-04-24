@@ -8,9 +8,10 @@
 /*=======================================================================*/
 #define CFG_DEV_MSDC0
 #define CFG_DEV_MSDC1
-//#define CFG_DEV_MSDC2
+#define CFG_DEV_MSDC2   /* Enable MSDC2 Port */
 //#define CFG_DEV_MSDC3
 //#define CFG_DEV_MSDC4
+#if 0
 #if defined(CONFIG_MTK_COMBO) || defined(CONFIG_MTK_COMBO_MODULE)
 /*
 SDIO slot index number used by connectivity combo chip:
@@ -22,8 +23,14 @@ SDIO slot index number used by connectivity combo chip:
 #else
 #undef CONFIG_MTK_COMBO_SDIO_SLOT
 #endif
+#endif
+
+//#define CONFIG_MTK_LTE_TEST_SDIO_SLOT   (1) /* temp use MSDC1 for MT6290 LTE Project */
+#define CONFIG_MTK_LTE_TEST_SDIO_SLOT   (2) /* MSDC2 for MT6290 LTE Project */
+
 
 #if 0 /* FIXME. */
+
 /*=======================================================================*/
 /* MT6575 UART                                                           */
 /*=======================================================================*/

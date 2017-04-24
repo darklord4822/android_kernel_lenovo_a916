@@ -10,7 +10,7 @@
 //#define SOC_BY_HW_FG
 #define SOC_BY_SW_FG
 
-#define CONFIG_DIS_CHECK_BATTERY //reef.jiang 20140402 ,avoid reset when plug usb without battery
+//#define CONFIG_DIS_CHECK_BATTERY
 //#define FIXED_TBAT_25
 
 /* ADC Channel Number */
@@ -34,29 +34,18 @@
 
 #define FG_METER_RESISTANCE 	0
 
-#if 1//lisong 2014-3-25 [NO BUGID][config battery capacity for j608 project:default ZCV of 1920mAh]start
 /* Qmax for battery  */
-#define Q_MAX_POS_50	1933
-#define Q_MAX_POS_25	1920
-#define Q_MAX_POS_0		1792
-#define Q_MAX_NEG_10	1707
+/*begin by youweiqiang 2014.06.04*/
+#define Q_MAX_POS_50	2558//2517 	//ywq lct	//2500*1316/1307
+#define Q_MAX_POS_25	2588//2500	//ywq lct	//2500*1307/1307
+#define Q_MAX_POS_0	    2515//2333 	//ywq lct	//2500*1220/1307
+#define Q_MAX_NEG_10	2501//2222 	//ywq lct	//2500*1162/1307
 
-#define Q_MAX_POS_50_H_CURRENT	1902
-#define Q_MAX_POS_25_H_CURRENT	1866
-#define Q_MAX_POS_0_H_CURRENT	1619
-#define Q_MAX_NEG_10_H_CURRENT	880
-#else
-/* Qmax for battery  */
-#define Q_MAX_POS_50	2250
-#define Q_MAX_POS_25	2250
-#define Q_MAX_POS_0		2250
-#define Q_MAX_NEG_10	2250
-
-#define Q_MAX_POS_50_H_CURRENT	2250
-#define Q_MAX_POS_25_H_CURRENT	2250
-#define Q_MAX_POS_0_H_CURRENT	2250
-#define Q_MAX_NEG_10_H_CURRENT	2250
-#endif//lisong 2014-3-25 [NO BUGID][config battery capacity for j608 project:default ZCV of 1920mAh]end
+#define Q_MAX_POS_50_H_CURRENT	2544//2477 //ywq lct//2500*1295/1307
+#define Q_MAX_POS_25_H_CURRENT	2579//2429  //ywq lct//2500*1270/1307
+#define Q_MAX_POS_0_H_CURRENT	2160//2107  //ywq lct //2500*1102/1307
+#define Q_MAX_NEG_10_H_CURRENT	1585//1069  //ywq lct //2500*559/1307
+/*end by youweiqiang 2014.06.04*/
 
 
 /* Discharge Percentage */
@@ -65,10 +54,7 @@
 
 /* battery meter parameter */
 #define CUST_TRACKING_POINT  14
-//lisong 2014-3-25 [NO BUGID][config r-sense by hardware design]start
-//#define CUST_R_SENSE         68
-#define CUST_R_SENSE         220
-//lisong 2014-3-25 [NO BUGID][config r-sense by hardware design]end
+#define CUST_R_SENSE         68
 #define CUST_HW_CC           0
 #define AGING_TUNING_VALUE   103
 #define CUST_R_FG_OFFSET    0
@@ -85,13 +71,13 @@
 #define FG_VBAT_AVERAGE_SIZE 18
 #define R_FG_VALUE 			0 // mOhm, base is 20
 
-#define CUST_POWERON_DELTA_CAPACITY_TOLRANCE	40
+#define CUST_POWERON_DELTA_CAPACITY_TOLRANCE	20  //ywq lct//40
 #define CUST_POWERON_LOW_CAPACITY_TOLRANCE		5
 #define CUST_POWERON_MAX_VBAT_TOLRANCE			90
 #define CUST_POWERON_DELTA_VBAT_TOLRANCE		30
 
 /* Disable Battery check for HQA */
-#ifdef MTK_DISABLE_POWER_ON_OFF_VOLTAGE_LIMITATION
+#ifdef CONFIG_MTK_DISABLE_POWER_ON_OFF_VOLTAGE_LIMITATION
 #define FIXED_TBAT_25
 #endif
 

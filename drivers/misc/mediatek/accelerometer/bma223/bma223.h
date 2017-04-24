@@ -68,4 +68,3 @@
 #define BMA222_BUFSIZE				256
 	 
 #endif
-
