@@ -14,7 +14,7 @@ Camera  | 13MPx + 2Mpx, LED Flash
 ![Lenovo](http://s.4pda.to/bZqdfxqqK1LqLMBjMAdgtoDsj04q3tz1UqfjJyoWRBV3clHYV7h.jpg "Lenovo A916")
 
 =========================================
-cd ~/android_kernel_lenovo_a916
-mkdir out
-make ARCH=arm ARCH_MTK_PLATFORM=mt6592 O=out lenovo_a916_defconfig
-make ARCH=arm ARCH_MTK_PLATFORM=mt6592 O=out
+> ``` cd ~/android_kernel_lenovo_a916 ```
+> ``` mkdir out ```
+> ``` make O=out lenovo_a916_defconfig ```
+> ``` make O=out ```
