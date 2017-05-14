@@ -1,26 +1,20 @@
-kernel source for Fly Tornado One
+kernel source for Lenovo A916
 =========================================
 Basic   | Spec Sheet
 -------:|:-------------------------
-CPU     | 1.4GHz Octa-Core MT6592
+CPU     | 1.4GHz Octa-Core MT6592M
 GPU     | Mali - 450 MP4
 Memory  | 1GB RAM
 Shipped Android Version | 5.1
 Storage | 8GB
-Battery | 1920 mAh
-Display | 5" 720 x 1280 px
-Camera  | 13MPx + 5Mpx, LED Flash
+Battery | 2 500 mAh
+Display | 5.5" 720 x 1280 px
+Camera  | 13MPx + 2Mpx, LED Flash
 
-![Fly](http://mobiltelefon.ru/i/other/september14/22/iq4511_2.jpg "Fly Tornado One")
+![Lenovo](http://s.4pda.to/bZqdfxqqK1LqLMBjMAdgtoDsj04q3tz1UqfjJyoWRBV3clHYV7h.jpg "Lenovo A916")
 
 =========================================
-cd ~/j608_kernel
+cd ~/android_kernel_lenovo_a916
 mkdir out
-make ARCH=arm ARCH_MTK_PLATFORM=mt6592 O=out fly_j608_defconfig
+make ARCH=arm ARCH_MTK_PLATFORM=mt6592 O=out lenovo_a916_defconfig
 make ARCH=arm ARCH_MTK_PLATFORM=mt6592 O=out
-
-=========================================
-* Not Working
-  * DT2WAKE
-# android_kernel_lenovo_a916
-# android_kernel_lenovo_a916
