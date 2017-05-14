@@ -18,4 +18,3 @@ cd ~/android_kernel_lenovo_a916
 mkdir out
 make ARCH=arm ARCH_MTK_PLATFORM=mt6592 O=out lenovo_a916_defconfig
 make ARCH=arm ARCH_MTK_PLATFORM=mt6592 O=out
-=========================================
