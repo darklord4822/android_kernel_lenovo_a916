@@ -338,4 +338,3 @@ _kdCISModulePowerOn_exit_:
 
 EXPORT_SYMBOL(kdCISModulePowerOn);
 
-

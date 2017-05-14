@@ -9,12 +9,6 @@
 
 //#define ZSD15FPS
 //#define OV13850_CAP_24FPS
-#define OV13850_DEBUG  //use for open and close sensor debug log;
-#ifdef OV13850_DEBUG
-	#define OV13850DB(fmt, arg...) xlog_printk(ANDROID_LOG_DEBUG, "[OV13850Raw] ",  fmt, ##arg)
-#else
-	#define OV13850DB(fmt, arg...)
-#endif
 
 typedef enum group_enum {
     PRE_GAIN=0,
@@ -193,4 +187,3 @@ UINT32 OV13850MIPIClose(void);
 //e_add for porting
 
 #endif /* __SENSOR_H */
-

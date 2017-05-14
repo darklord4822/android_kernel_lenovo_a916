@@ -1002,12 +1002,6 @@ config MTK_UMTS_TDD128_MODE
 	  TDD specific customization, etc. TDD projects need to enable this
 	  feature option, non-TDD projects must disable this feature option.
 
-config MTK_EEMCS_DRIVER
-	bool "MTK_EEMCS_DRIVER"
-	help
-	  MTK_EEMCS_DRIVER=yes	  
-
-
 config MTK_SIM1_SOCKET_TYPE
 	string "MTK_SIM1_SOCKET_TYPE"
 	help

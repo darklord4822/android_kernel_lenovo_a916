@@ -12,7 +12,7 @@ obj-y	+= core/
 obj-y	+= dct/dct/
 endif
 
-#obj-y	+=  camera/camera/
+obj-y	+=  camera/camera/
 obj-y   +=  flashlight/constant_flashlight/
 obj-y	+=  vibrator/
 obj-y	+=  leds/

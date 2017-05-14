@@ -14,10 +14,11 @@
 #include <linux/xlog.h>
 #include <asm/system.h>
 
-#include <linux/proc_fs.h> 
+#include <linux/proc_fs.h>
 
 
 #include <linux/dma-mapping.h>
+#include <linux/slab.h>
 
 #include "kd_camera_hw.h"
 #include "kd_imgsensor.h"
@@ -27,12 +28,6 @@
 #include "ov13850mipiraw_Sensor.h"
 #include "ov13850mipiraw_Camera_Sensor_para.h"
 #include "ov13850mipiraw_CameraCustomized.h"
-
-#define OV13850_OTP_PROG_TEST   //use for open and close OTP function.  
-#ifdef OV13850_OTP_PROG_TEST
-#include "sunny_ov13850_otp.h"
-#endif
-
 static DEFINE_SPINLOCK(ov13850mipiraw_drv_lock);
 
 //for shutter,gain,framelength use muliwrite
@@ -62,12 +57,16 @@ static kal_uint8  ov13850_framelength_len=6;
 
 #endif
 
-
+#define OV13850_DEBUG  //xb.pang
 //#define OV13850_DEBUG_SOFIA
 #define OV13850_TEST_PATTERN_CHECKSUM (0xf86cfdf4) //V_MIRROR
-#define OV13850_DEBUG_SOFIA  
+#define OV13850_DEBUG_SOFIA  //xb.pang
 
-
+#ifdef OV13850_DEBUG
+	#define OV13850DB(fmt, arg...) xlog_printk(ANDROID_LOG_DEBUG, "[OV13850Raw] ",  fmt, ##arg)
+#else
+	#define OV13850DB(fmt, arg...)
+#endif
 
 #ifdef OV13850_DEBUG_SOFIA
 	#define OV13850DBSOFIA(fmt, arg...) xlog_printk(ANDROID_LOG_DEBUG, "[OV13850Raw] ",  fmt, ##arg)
@@ -75,12 +74,8 @@ static kal_uint8  ov13850_framelength_len=6;
 	#define OV13850DBSOFIA(fmt, arg...)
 #endif
 
+//xb.pang for test
 kal_uint8 prv_flag = 0;
-
-#ifdef SLT_DEVINFO_CMM 
-#include  <linux/dev_info.h>
-static struct devinfo_struct *s_DEVINFO_ccm;   //suppose 10 max lcm device 
-#endif
 
 #define mDELAY(ms)  mdelay(ms)
 kal_uint8 OV13850_WRITE_ID = OV13850MIPI_WRITE_ID;
@@ -101,13 +96,11 @@ extern int iReadReg(u16 a_u2Addr , u8 * a_puBuff , u16 i2cId);
 extern int iWriteReg(u16 a_u2Addr , u32 a_u4Data , u32 a_u4Bytes , u16 i2cId);
 extern int iMultiWriteReg(u8 *pData, u16 lens, u16 i2cId);
 
-
 #define OV13850_write_cmos_sensor(addr, para) iWriteReg((u16) addr , (u32) para , 1, OV13850_WRITE_ID)
 
 #define OV13850_multi_write_cmos_sensor(pData, lens) iMultiWriteReg((u8*) pData, (u16) lens, OV13850_WRITE_ID)
 
-#define OV13850_ORIENTATION IMAGE_V_MIRROR  //IMAGE_HV_MIRROR//IMAGE_NORMAL
-
+#define OV13850_ORIENTATION IMAGE_V_MIRROR//IMAGE_V_MIRROR//IMAGE_H_MIRROR//IMAGE_NORMAL //IMAGE_V_MIRROR
 
 kal_uint16 OV13850_read_cmos_sensor(kal_uint32 addr)
 {
@@ -117,6 +110,583 @@ kal_uint16 get_byte=0;
 }
 
 #define Sleep(ms) mdelay(ms)
+
+#define OTP_ENABLE 1
+
+#if OTP_ENABLE
+
+#define LCS_BUF_SIZE         62
+#define OTP_MID               0x06 //Qtech
+
+// R/G and B/G of typical camera module is defined here
+
+int RG_Ratio_Typical = 0x13E;//0x230;
+int BG_Ratio_Typical = 0x125;// 0x2B1;
+
+typedef enum {
+	MI_ID=0,
+	LENS_ID,
+	YEAR,
+	MONTH,
+	DAY,
+	INFO_GROUP=5,
+}OTP_INFO_OFFSET;
+
+typedef enum {
+	AWB_RG_MSB=0,
+	AWB_BG_MSB,
+	LIGHT_RG_MSB,
+	LIGHT_BG_MSB,
+	AWB_LIGHT_LSB,
+	AWB_GROUP=5,
+} OTP_AWB_OFFSET;
+
+typedef enum {
+	VCMST_MSB=0,
+	VCMED_MSB,
+	VCM_DIR_LSB,
+	VCM_GROUP=3,
+} OTP_VCM_OFFSET;
+
+typedef enum {
+	LCS=0,
+	LCS_GROUP=LCS_BUF_SIZE,
+} OTP_LCS_OFFSET;
+
+//OV13850 OTP Register and Addrs definition
+#define OTP_BUF_BASE_ADDR         0x7000 //
+#define OTP_BUF_USABLE_OFFSET 	 0x220 //usable buffer 0x7220~0x73BE  415Bytes
+#define OTP_BUF_SIZE 415
+#define OTP_BUF_ADDR 			 OTP_BUF_BASE_ADDR + OTP_BUF_USABLE_OFFSET //0x7220
+
+#define OTP_BUF_INFO_OFFSET 0
+#define OTP_INFO_BASE_ADDR OTP_BUF_ADDR+OTP_BUF_INFO_OFFSET //0x7220
+#define OTP_BUF_INFO_SIZE INFO_GROUP*3+1
+
+#define OTP_BUF_AWB_OFFSET 	OTP_BUF_INFO_OFFSET+OTP_BUF_INFO_SIZE 
+#define OTP_AWB_BASE_ADDR OTP_BUF_ADDR+OTP_BUF_AWB_OFFSET //0x7230
+#define OTP_BUF_AWB_SIZE AWB_GROUP*3+1
+
+#define OTP_BUF_VCM_OFFSET 	OTP_BUF_AWB_OFFSET+OTP_BUF_AWB_SIZE 
+#define OTP_VCM_BASE_ADDR OTP_BUF_ADDR+OTP_BUF_VCM_OFFSET //0x7240
+#define OTP_BUF_VCM_SIZE  VCM_GROUP*3+1
+
+#define OTP_BUF_LCS_OFFSET 	OTP_BUF_VCM_OFFSET+OTP_BUF_VCM_SIZE 
+#define OTP_LCS_BASE_ADDR OTP_BUF_ADDR+OTP_BUF_LCS_OFFSET //0x724A
+
+
+#define OTP_LOAD_DUMP         0x3D81
+#define OTP_MODE_SELECT         0x3D84
+
+#define OTP_DUMP_STADD_H  0x3D88
+#define OTP_DUMP_STADD_L   0x3D89
+
+#define OTP_DUMP_EDADD_H  0x3D8A
+#define OTP_DUMP_EDADD_L   0x3D8B
+
+#define GAIN_RH_ADDR          0x5056
+#define GAIN_RL_ADDR          0x5057
+#define GAIN_GH_ADDR          0x5058
+#define GAIN_GL_ADDR          0x5059
+#define GAIN_BH_ADDR          0x505a
+#define GAIN_BL_ADDR          0x505b
+
+#define LENC_REG_ADDR          0x5200
+
+#define GAIN_DEFAULT_VALUE    0x0400 // 1x gain
+
+
+
+//For HW define
+struct otp_struct {
+	int product_year;
+	int product_month;
+	int product_day;
+	int module_integrator_id;
+	int lens_id;
+	int rg_ratio;
+	int bg_ratio;
+	int light_rg;
+	int light_bg;
+	int VCM_start;
+	int VCM_end;
+	int VCM_dir;
+	int lenc[LCS_BUF_SIZE];
+
+};
+
+#define OTPLOG(fmt, arg...) xlog_printk(ANDROID_LOG_DEBUG, "OTP",  fmt, ##arg)
+#define OTP_write_cmos_sensor(addr,para) 	OV13850_write_cmos_sensor(addr, para)
+#define OTP_read_cmos_sensor(addr)		      OV13850_read_cmos_sensor(addr)
+
+
+static struct otp_struct current_otp;
+
+static void clear_otp_buffer(int start_addr,int end_addr)
+{
+	int i;
+	// clear otp buffer
+	for (i=start_addr;i<end_addr;i++) {
+		OTP_write_cmos_sensor(i, 0x00);
+	}
+}
+
+static void dump_otp_buffer(int start_addr,int end_addr)
+{
+
+	OTPLOG("dump_otp_buffer from %#x to %#x\n",start_addr,end_addr);
+	// select otp mode
+	OTP_write_cmos_sensor(OTP_MODE_SELECT, 0xC0);
+	//set dump addr
+	OTP_write_cmos_sensor(OTP_DUMP_STADD_H,(start_addr>>8));
+	OTP_write_cmos_sensor(OTP_DUMP_STADD_L,(start_addr&0xff));
+
+	OTP_write_cmos_sensor(OTP_DUMP_EDADD_H,(end_addr>>8));
+	OTP_write_cmos_sensor(OTP_DUMP_EDADD_L,(end_addr&0xff));
+		
+	// read otp into buffer
+	OTP_write_cmos_sensor(OTP_LOAD_DUMP, 0x01);
+
+	// disable otp read
+	//OTP_write_cmos_sensor(0x3d81, 0x00);
+
+}
+
+//For HW
+// index: index of otp group. (1, 2, 3)
+// return: 	index 1, 2, 3, if empty, return 0,invalid return -1;
+static int check_otp_info()
+{
+	int flag;
+	int index;
+	int reg, start_addr,end_addr;
+
+	for(index = 1;index<=3;index++)
+	{
+		//set dump addr
+		start_addr=OTP_INFO_BASE_ADDR;//dupm wb flag
+		end_addr=OTP_INFO_BASE_ADDR;
+		
+		dump_otp_buffer(start_addr,end_addr);
+		mdelay(5);
+		
+		// read info flag
+		flag = OTP_read_cmos_sensor(OTP_INFO_BASE_ADDR);
+		OTPLOG("check_otp_info, info_flag = %x \n",flag);
+
+		//clear buffer
+		clear_otp_buffer(start_addr,end_addr);
+		//OTP_write_cmos_sensor(OTP_AWB_BASE_ADDR, 0x00)
+
+		//check WB group 
+		flag = (flag>>(8-2*index))&0x3;		
+
+		if(flag==0x1)
+			{
+			return index;
+		}
+		else if(flag==0x0)
+			{
+		      //return 0;
+		}
+		else
+			{
+			//return -1;
+		}
+
+	}
+	return 0;
+}
+
+
+// For HW
+// index: index of otp group. (1, 2, 3)
+// otp_ptr: pointer of otp_struct
+// return: 	0, 
+static int read_otp_info(int index, struct otp_struct * otp_ptr)
+{
+	int awb_light_lsb;
+	int group_addr,start_addr,end_addr;
+	  
+	//set dump addr
+	group_addr = OTP_INFO_BASE_ADDR+(INFO_GROUP*(index-1))+1;//select group
+	start_addr=group_addr;//dupm one group one time
+	end_addr=start_addr+INFO_GROUP-1;
+	OTPLOG("read_otp_info, dump addr start= %x end=%x ,group=%d \n",start_addr,end_addr,index);	
+	
+	dump_otp_buffer(start_addr,end_addr);
+	mdelay(5);
+	
+	(*otp_ptr).product_year = OTP_read_cmos_sensor(group_addr + YEAR);
+	(*otp_ptr).product_month = OTP_read_cmos_sensor(group_addr + MONTH);
+	(*otp_ptr).product_day = OTP_read_cmos_sensor(group_addr + DAY );
+	(*otp_ptr).module_integrator_id =  OTP_read_cmos_sensor(group_addr + MI_ID );
+	(*otp_ptr).lens_id =  OTP_read_cmos_sensor(group_addr + LENS_ID );
+
+	OTPLOG("read_otp_info,Date:%d\\%d\\%d  ModuleID=%d   LensID=%d \n",(*otp_ptr).product_year,(*otp_ptr).product_month,(*otp_ptr).product_day,(*otp_ptr).module_integrator_id,(*otp_ptr).lens_id);
+	// disable otp read
+	//OTP_write_cmos_sensor(0x3d81, 0x00);
+
+	clear_otp_buffer(start_addr,end_addr);
+
+
+	return 0;	
+}
+
+//For HW
+// index: index of otp group. (1, 2, 3)
+// return: 	index 1, 2, 3, if empty, return 0,invalid return -1;
+static int check_otp_wb()
+{
+	int flag,i;
+	int index;
+	int reg, start_addr,end_addr;
+
+	for(index = 1;index<=3;index++)
+	{
+		//set dump addr
+		start_addr=OTP_AWB_BASE_ADDR;//dupm wb flag
+		end_addr=OTP_AWB_BASE_ADDR;
+		
+		dump_otp_buffer(start_addr,end_addr);
+		mdelay(5);
+
+		// read WB flag
+		flag = OTP_read_cmos_sensor(OTP_AWB_BASE_ADDR);
+		OTPLOG("check_otp_wb, wb_flag = %x \n",flag);
+
+		//clear buffer
+		clear_otp_buffer(start_addr,end_addr);
+		//OTP_write_cmos_sensor(OTP_AWB_BASE_ADDR, 0x00)
+
+		//check WB group 
+		flag = (flag>>(8-2*index))&0x3;		
+
+		if(flag==0x1)
+			{
+			return index;
+		}
+		else if(flag==0x0)
+			{
+		      //return 0;
+		}
+		else
+			{
+			//return -1;
+		}
+
+	}
+	return 0;
+}
+
+
+
+
+// For HW
+// index: index of otp group. (1, 2, 3)
+// otp_ptr: pointer of otp_struct
+// return: 	0, 
+static int read_otp_wb(int index, struct otp_struct * otp_ptr)
+{
+	int awb_light_lsb;
+	int group_addr,start_addr,end_addr;
+	  
+	//set dump addr
+	group_addr = OTP_AWB_BASE_ADDR+(AWB_GROUP*(index-1))+1;//select group
+	start_addr=group_addr;//dupm one group one time
+	end_addr=start_addr+AWB_GROUP-1;
+	OTPLOG("read_otp_wb, dump addr start= %x end=%x ,group=%d \n",start_addr,end_addr,index);	
+	
+	dump_otp_buffer(start_addr,end_addr);
+	mdelay(5);
+	
+	awb_light_lsb=OTP_read_cmos_sensor(group_addr+AWB_LIGHT_LSB);
+	(*otp_ptr).rg_ratio = ((OTP_read_cmos_sensor(group_addr + AWB_RG_MSB))<<2)+((awb_light_lsb>>6)&0x3);
+	(*otp_ptr).bg_ratio = ((OTP_read_cmos_sensor(group_addr + AWB_BG_MSB))<<2)+((awb_light_lsb>>4)&0x3);
+	(*otp_ptr).light_rg = ((OTP_read_cmos_sensor(group_addr + LIGHT_RG_MSB ))<<2)+((awb_light_lsb>>2)&0x3);
+	(*otp_ptr).light_bg =  ((OTP_read_cmos_sensor(group_addr + LIGHT_BG_MSB ))<<2)+((awb_light_lsb)&0x3);
+
+	OTPLOG("read_otp_wb, rg_ratio= %d  bg_ratio=%d ,light_rg=%d light_bg=%d\n",(*otp_ptr).rg_ratio,(*otp_ptr).bg_ratio,(*otp_ptr).light_rg,(*otp_ptr).light_bg);
+	// disable otp read
+	//OTP_write_cmos_sensor(0x3d81, 0x00);
+
+	clear_otp_buffer(start_addr,end_addr);
+
+
+	return 0;	
+}
+
+//For HW
+// index: index of otp group. (1, 2, 3)
+// return: 	index 1, 2, 3, if empty, return 0,invalid return -1;
+static int check_otp_lenc()
+{
+	int flag,i;
+	int index;
+	int reg, start_addr,end_addr;
+
+	for(index = 1;index<=3;index++)
+	{
+		//set dump addr
+		start_addr=OTP_LCS_BASE_ADDR;//dupm wb flag
+		end_addr=OTP_LCS_BASE_ADDR;
+		
+		dump_otp_buffer(start_addr,end_addr);
+		mdelay(5);
+
+		// read LCS flag
+		flag = OTP_read_cmos_sensor(OTP_LCS_BASE_ADDR);
+		OTPLOG("check_otp_lenc, lenc_flag = %x \n",flag);
+
+		//clear buffer
+		clear_otp_buffer(start_addr,end_addr);
+		//OTP_write_cmos_sensor(OTP_AWB_BASE_ADDR, 0x00)
+
+		//check LCS group 
+		flag = (flag>>(8-2*index))&0x3;		
+
+		if(flag==0x1)
+			{
+			return index;
+		}
+		else if(flag==0x0)
+			{
+		      //return 0;
+		}
+		else
+			{
+			//return -1;
+		}
+
+	}
+	return 0;
+}
+
+// For HW
+// index: index of otp group. (1, 2, 3)
+// otp_ptr: pointer of otp_struct
+// return: 	0, 
+static int read_otp_lenc(int index, struct otp_struct * otp_ptr)
+{
+	int bank, i;
+	int group_addr,start_addr,end_addr;
+	
+	//set dump addr
+	group_addr = OTP_LCS_BASE_ADDR+(LCS_GROUP*(index-1))+1;//select group
+	start_addr=group_addr;//dupm one group one time
+	end_addr=start_addr+LCS_GROUP-1;
+	OTPLOG("read_otp_lenc, dump addr start= %x end=%x ,group=%d \n",start_addr,end_addr,index);	
+	
+	dump_otp_buffer(start_addr,end_addr);
+	mdelay(10);
+
+	for(i=0;i<LCS_BUF_SIZE;i++) {
+		(* otp_ptr).lenc[i]=OTP_read_cmos_sensor(group_addr+i);
+	}
+
+	// disable otp read
+	//OTP_write_cmos_sensor(0x3d81, 0x00);
+
+	clear_otp_buffer(start_addr,end_addr);
+
+	return 0;	
+}
+
+
+// R_gain, sensor red gain of AWB, 0x400 =1
+// G_gain, sensor green gain of AWB, 0x400 =1
+// B_gain, sensor blue gain of AWB, 0x400 =1
+// return 0;
+static int update_awb_gain(int R_gain, int G_gain, int B_gain)
+{
+	if (R_gain>=GAIN_DEFAULT_VALUE) {
+		OTP_write_cmos_sensor(GAIN_RH_ADDR, R_gain>>8);
+		OTP_write_cmos_sensor(GAIN_RL_ADDR, R_gain & 0x00ff);
+	}
+
+	if (G_gain>=GAIN_DEFAULT_VALUE) {
+		OTP_write_cmos_sensor(GAIN_GH_ADDR, G_gain>>8);
+		OTP_write_cmos_sensor(GAIN_GL_ADDR, G_gain & 0x00ff);
+	}
+
+	if (B_gain>=GAIN_DEFAULT_VALUE) {
+		OTP_write_cmos_sensor(GAIN_BH_ADDR, B_gain>>8);
+		OTP_write_cmos_sensor(GAIN_BL_ADDR, B_gain & 0x00ff);
+	}
+
+    OTPLOG("update_awb_gain, %x = %x\n",GAIN_RH_ADDR, OTP_read_cmos_sensor(GAIN_RH_ADDR));
+    OTPLOG("update_awb_gain, %x = %x\n",GAIN_RL_ADDR, OTP_read_cmos_sensor(GAIN_RL_ADDR));
+    OTPLOG("update_awb_gain, %x = %x\n",GAIN_GH_ADDR, OTP_read_cmos_sensor(GAIN_GH_ADDR));
+    OTPLOG("update_awb_gain, %x = %x\n",GAIN_GL_ADDR, OTP_read_cmos_sensor(GAIN_GL_ADDR));
+    OTPLOG("update_awb_gain, %x = %x\n",GAIN_BH_ADDR, OTP_read_cmos_sensor(GAIN_BH_ADDR));
+    OTPLOG("update_awb_gain, %x = %x\n",GAIN_BL_ADDR, OTP_read_cmos_sensor(GAIN_BL_ADDR));
+	
+	return 0;
+}
+
+// call this function after OV8858 initialization
+// otp_ptr: pointer of otp_struct
+static int update_lenc(struct otp_struct * otp_ptr)
+{
+	int i, temp;
+	temp = 0x01|OTP_read_cmos_sensor(0x5000);
+	OTP_write_cmos_sensor(0x5000, temp);
+
+	for(i=0;i<LCS_BUF_SIZE;i++) {
+		OTP_write_cmos_sensor(LENC_REG_ADDR + i, (*otp_ptr).lenc[i]);
+	}
+
+	for(i=0;i<LCS_BUF_SIZE;i++){
+		OTPLOG("update_lenc, %#x + %d = %x\n",LENC_REG_ADDR, i,OTP_read_cmos_sensor((LENC_REG_ADDR)+i));
+	}
+
+	return 0;
+}
+
+// call this function after OV8858 initialization
+// return value: 0 update success
+//		1, no OTP
+
+
+static int update_otp_info(){
+
+
+	int otp_index;
+
+	OTPLOG("update_otp_info\n");
+	otp_index = check_otp_info();
+
+	if(otp_index<=0)
+	{	
+		// no valid info OTP data
+		OTPLOG("no valid  info OTP data\n");
+		return 1;
+	}	
+
+	read_otp_info(otp_index, &current_otp);
+
+	return 0;
+
+}
+
+
+static int update_otp_wb()
+{
+	int otp_index;
+	int R_gain, G_gain, B_gain, G_gain_R, G_gain_B;
+	int rg,bg;
+	OTPLOG("update_otp_wb\n");
+
+
+	// R/G and B/G of current camera module is read out from sensor OTP
+	// check first OTP with valid data
+	
+	otp_index = check_otp_wb();
+	if(otp_index<=0)
+	{	
+		// no valid wb OTP data
+		OTPLOG("no valid wb OTP data\n");
+		return 1;
+	}	
+
+	read_otp_wb(otp_index, &current_otp);
+
+
+
+	if(current_otp.light_rg==0) {
+		// no light source information in OTP, light factor = 1
+		rg = current_otp.rg_ratio;
+	}
+	else {
+		rg = current_otp.rg_ratio * (current_otp.light_rg +512) /1024;
+	}
+	
+	if(current_otp.light_bg==0) {
+		// not light source information in OTP, light factor = 1
+		bg = current_otp.bg_ratio;
+	}
+	else {
+		bg = current_otp.bg_ratio * (current_otp.light_bg +512) /1024;
+	}
+
+    OTPLOG("Upate Otp WB, r/g:0x%x, b/g:0x%x golden_rg:0x%x, golden_bg:0x%x\n", rg, bg,RG_Ratio_Typical,BG_Ratio_Typical);
+
+	//calculate G gain
+	//0x400 = 1x gain
+	if(bg < BG_Ratio_Typical) {
+		if (rg< RG_Ratio_Typical) {
+			// current_otp.bg_ratio < BG_Ratio_typical &&  
+			// current_otp.rg_ratio < RG_Ratio_typical
+   			G_gain = GAIN_DEFAULT_VALUE;
+			B_gain = GAIN_DEFAULT_VALUE * BG_Ratio_Typical / bg;
+    		R_gain = GAIN_DEFAULT_VALUE * RG_Ratio_Typical / rg; 
+		}
+		else {
+			// current_otp.bg_ratio < BG_Ratio_typical &&  
+			// current_otp.rg_ratio >= RG_Ratio_typical
+    		R_gain = GAIN_DEFAULT_VALUE;
+   	 		G_gain = GAIN_DEFAULT_VALUE * rg / RG_Ratio_Typical;
+    		B_gain = G_gain * BG_Ratio_Typical /bg;
+		}
+	}
+	else {
+		if (rg < RG_Ratio_Typical) {
+			// current_otp.bg_ratio >= BG_Ratio_typical &&  
+			// current_otp.rg_ratio < RG_Ratio_typical
+    		B_gain = GAIN_DEFAULT_VALUE;
+    		G_gain = GAIN_DEFAULT_VALUE * bg / BG_Ratio_Typical;
+    		R_gain = G_gain * RG_Ratio_Typical / rg;
+		}
+		else {
+			// current_otp.bg_ratio >= BG_Ratio_typical &&  
+			// current_otp.rg_ratio >= RG_Ratio_typical
+    		G_gain_B = GAIN_DEFAULT_VALUE * bg / BG_Ratio_Typical;
+   	 		G_gain_R = GAIN_DEFAULT_VALUE * rg / RG_Ratio_Typical;
+
+    		if(G_gain_B > G_gain_R ) {
+        				B_gain = GAIN_DEFAULT_VALUE;
+        				G_gain = G_gain_B;
+ 	     			R_gain = G_gain * RG_Ratio_Typical /rg;
+  			}
+    		else {
+        			R_gain = GAIN_DEFAULT_VALUE;
+       				G_gain = G_gain_R;
+        			B_gain = G_gain * BG_Ratio_Typical / bg;
+			}
+    	}    
+	}
+
+	update_awb_gain(R_gain, G_gain, B_gain);
+
+	return 0;
+
+}
+
+
+static int update_otp_lenc()
+{
+	int otp_index;
+
+	// R/G and B/G of current camera module is read out from sensor OTP
+	// check first OTP with valid data
+	OTPLOG("update_lenc_wb\n");
+	otp_index = check_otp_lenc();
+	if(otp_index<=0)
+	{	
+		// no valid lenc OTP data
+		OTPLOG("no valid lenc OTP data\n");
+		return 1;
+	}	
+	read_otp_lenc(otp_index, &current_otp);
+
+	update_lenc(&current_otp);
+	return 0;
+}
+
+
+#endif
+
+
 
 void OV13850_write_shutter(kal_uint32 shutter)
 {
@@ -966,7 +1536,7 @@ static void OV13850_Sensor_Init(void)
 	int transfer_len, transac_len=3;
 	kal_uint8* pBuf=NULL;
 	dma_addr_t dmaHandle;
-	//pBuf = (kal_uint8*)kmalloc(1024, GFP_KERNEL);
+	pBuf = (kal_uint8*)kmalloc(1024, GFP_KERNEL);
 	
 
     totalCnt = ARRAY_SIZE(ov13850_init);
@@ -978,7 +1548,7 @@ static void OV13850_Sensor_Init(void)
 	OV13850_multi_write_cmos_sensor(dmaHandle, len); 
 
 	dma_unmap_single(NULL, dmaHandle, 1024, DMA_TO_DEVICE);
-	//kfree(pBuf);	
+	kfree(pBuf);	
 
 	
 	#ifdef SHUTTER_MWRITE
@@ -1037,17 +1607,7 @@ UINT32 OV13850Open(void)
 	ov13850.OV13850AutoFlickerMode = KAL_FALSE;
 	ov13850.OV13850VideoMode = KAL_FALSE;
 	spin_unlock(&ov13850mipiraw_drv_lock);
-
-	OV13850_write_cmos_sensor(0x0103,0x01);// Reset sensor
-  	mDELAY(10);
 	OV13850_Sensor_Init();
-  	mDELAY(10);
-  	/************OTP function************/
-	#ifdef OV13850_OTP_PROG_TEST
-	update_otp_wb();
-    update_otp_lenc();
-	#endif
-  	/***********************************/
 
 	spin_lock(&ov13850mipiraw_drv_lock);
 	ov13850.DummyLines= 0;
@@ -1061,6 +1621,31 @@ UINT32 OV13850Open(void)
 	ov13850.realGain = OV13850Reg2Gain(0x1f);//ispBaseGain as 1x
 	spin_unlock(&ov13850mipiraw_drv_lock);
 
+	#if OTP_ENABLE
+  OTP_write_cmos_sensor(0x3D85, (OTP_read_cmos_sensor(0x3D85)|0x06));
+  OTP_write_cmos_sensor(0x3D8C,0x73);
+  OTP_write_cmos_sensor(0x3D8D,0xBF);
+	
+//set 0x5002[1] to "0'
+   OTP_write_cmos_sensor(0x5002,OTP_read_cmos_sensor(0x5002)&(~0x02));
+
+#if 1
+	dump_otp_buffer(OTP_BUF_ADDR,OTP_BUF_ADDR+OTP_BUF_SIZE-1);
+	mdelay(100);
+	for(i=0;i<OTP_BUF_SIZE;i++){
+		OTPLOG("dump_otp_buffer, %#x = %x \n",OTP_BUF_ADDR+i,OTP_read_cmos_sensor(OTP_BUF_ADDR+i));
+
+	}
+#endif	
+	update_otp_info();
+	update_otp_wb();
+	update_otp_lenc();
+
+//set 0x5002[1] to "1'
+   OTP_write_cmos_sensor(0x5002,OTP_read_cmos_sensor(0x5002)|0x02);
+	
+	#endif
+
 	OV13850DB("OV13850Open exit :\n ");
 
     return ERROR_NONE;
@@ -1069,17 +1654,8 @@ UINT32 OV13850Open(void)
 UINT32 OV13850GetSensorID(UINT32 *sensorID)
 {
     int  retry = 1;
-#ifdef SLT_DEVINFO_CMM 
- 	s_DEVINFO_ccm =(struct devinfo_struct*) kmalloc(sizeof(struct devinfo_struct), GFP_KERNEL);	
-	s_DEVINFO_ccm->device_type = "CCM";
-	s_DEVINFO_ccm->device_module = "P13V03D";//can change if got module id
-	s_DEVINFO_ccm->device_vendor = "Sunny";
-	s_DEVINFO_ccm->device_ic = "OV13850";
-	s_DEVINFO_ccm->device_version = "OmniVision";
-	s_DEVINFO_ccm->device_info = "1300W";
-#endif
 
-	printk("OV13850GetSensorID enter :\n ");
+	OV13850DB("OV13850GetSensorID enter :\n ");
 	OV13850_WRITE_ID = OV13850MIPI_WRITE_ID;
 	OV13850_write_cmos_sensor(0x0103,0x01);// Reset sensor
     mDELAY(10);
@@ -1089,7 +1665,7 @@ UINT32 OV13850GetSensorID(UINT32 *sensorID)
         *sensorID = (OV13850_read_cmos_sensor(0x300A)<<8)|OV13850_read_cmos_sensor(0x300B);
         if (*sensorID == OV13850_SENSOR_ID)
         	{
-        		printk("write id=%x, Sensor ID = 0x%04x\n", OV13850_WRITE_ID,*sensorID);
+        		OV13850DB("write id=%x, Sensor ID = 0x%04x\n", OV13850_WRITE_ID,*sensorID);
             	break;
         	}
         OV13850DB("Read Sensor ID Fail = 0x%04x\n", *sensorID);
@@ -1116,19 +1692,9 @@ UINT32 OV13850GetSensorID(UINT32 *sensorID)
 		 {
 		 
         *sensorID = 0xFFFFFFFF;
-	#ifdef SLT_DEVINFO_CMM 
-		s_DEVINFO_ccm->device_used = DEVINFO_UNUSED;
-		devinfo_check_add_device(s_DEVINFO_ccm);
-	#endif
         return ERROR_SENSOR_CONNECT_FAIL;
 		 	}
     }
-
-#ifdef SLT_DEVINFO_CMM 
-	s_DEVINFO_ccm->device_used = DEVINFO_USED;
-	devinfo_check_add_device(s_DEVINFO_ccm);
-#endif
-
     return ERROR_NONE;
 }
 
